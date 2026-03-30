@@ -2,8 +2,8 @@ pandas
 numpy
 scipy
 matplotlib
-altair
-streamlit
+altair>=5.0.0
+streamlit>=1.40.0
 reportlab
 python-docx
 python-pptx
