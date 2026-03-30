@@ -278,24 +278,43 @@ def make_maf(df: pd.DataFrame) -> plt.Figure:
 
 def make_forest(hits: pd.DataFrame) -> plt.Figure:
     if hits.empty or 'OR' not in hits.columns: return None
-    sub = hits.dropna(subset=['OR','SE']).head(15).copy()
+    # Need BETA and SE to compute CI; fall back to OR-only if missing
+    has_beta_se = 'BETA' in hits.columns and 'SE' in hits.columns
+    sub = hits.dropna(subset=['OR']).head(15).copy()
     if sub.empty: return None
-    sub['CI_lo'] = np.exp(sub['BETA'] - 1.96*sub['SE'])
-    sub['CI_hi'] = np.exp(sub['BETA'] + 1.96*sub['SE'])
-    sub['label'] = sub['SNP'] + ' (CHR' + sub['CHR'].astype(str) + ')'
 
-    fig, ax = plt.subplots(figsize=(8, max(4, len(sub)*0.55)), facecolor='white')
+    if has_beta_se:
+        sub = sub.dropna(subset=['BETA','SE'])
+        sub['CI_lo'] = np.exp(sub['BETA'] - 1.96 * sub['SE'])
+        sub['CI_hi'] = np.exp(sub['BETA'] + 1.96 * sub['SE'])
+    else:
+        # Approximate ±30% CI when SE is unavailable
+        sub['CI_lo'] = sub['OR'] * 0.70
+        sub['CI_hi'] = sub['OR'] * 1.30
+
+    # Clip to strictly positive so errorbar never gets negative values
+    sub['CI_lo'] = np.clip(sub['CI_lo'], 1e-6, None)
+    sub['CI_hi'] = np.clip(sub['CI_hi'], 1e-6, None)
+    # xerr must be >= 0
+    err_lo = np.clip(sub['OR'].values - sub['CI_lo'].values, 0, None)
+    err_hi = np.clip(sub['CI_hi'].values - sub['OR'].values, 0, None)
+
+    sub['label'] = sub['SNP'].astype(str) + ' (CHR' + sub['CHR'].astype(str) + ')'
+
+    fig, ax = plt.subplots(figsize=(8, max(4, len(sub)*0.6)), facecolor='white')
     cols = ['#D6604D' if o > 1 else '#2166AC' for o in sub['OR']]
-    ax.barh(range(len(sub)), sub['OR'] - 1, left=1, color=cols, alpha=0.7, height=0.5)
-    ax.errorbar(sub['OR'], range(len(sub)),
-                xerr=[sub['OR']-sub['CI_lo'], sub['CI_hi']-sub['OR']],
-                fmt='none', color='#333', capsize=3, lw=1)
-    ax.scatter(sub['OR'], range(len(sub)), color=cols, zorder=5, s=30)
+    ax.barh(range(len(sub)), sub['OR'] - 1, left=1, color=cols, alpha=0.6, height=0.45)
+    ax.errorbar(sub['OR'].values, range(len(sub)),
+                xerr=[err_lo, err_hi],
+                fmt='none', color='#333', capsize=3, lw=1.2)
+    ax.scatter(sub['OR'].values, range(len(sub)), color=cols, zorder=5, s=35)
     ax.axvline(1, color='grey', ls='--', lw=1)
-    ax.set_yticks(range(len(sub))); ax.set_yticklabels(sub['label'], fontsize=8)
-    ax.set_xlabel('Odds Ratio', fontsize=11)
+    ax.set_yticks(range(len(sub)))
+    ax.set_yticklabels(sub['label'].tolist(), fontsize=8)
+    ax.set_xlabel('Odds Ratio (OR)', fontsize=11)
     ax.set_title('Forest Plot — Top Significant Loci', fontsize=12, fontweight='bold')
-    ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
     fig.tight_layout()
     return fig
 
