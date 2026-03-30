@@ -6,4 +6,3 @@ streamlit
 reportlab
 python-docx
 python-pptx
-rpy2
